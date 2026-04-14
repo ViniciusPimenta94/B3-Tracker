@@ -2,36 +2,87 @@ process.env.TZ = "America/Sao_Paulo";
 
 const axios = require("axios");
 const cron = require("node-cron");
+const YahooFinance = require("yahoo-finance2").default;
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
-const BRAPI_TOKEN = process.env.BRAPI_TOKEN;
 
+/** Tickers B3 (sem .SA). Fonte: Yahoo Finance (série .SA na B3). */
 const FIIS = ["XPLG11", "PVBI11", "VISC11", "BTHF11"];
 
-// 🔎 Busca dados do ativo
-async function getPrice(ticker) {
-  try {
-    const url = `https://brapi.dev/api/quote/${ticker}?token=${BRAPI_TOKEN}`;
+const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
-    const response = await axios.get(url);
-    const result = response.data.results[0];
+const QUOTE_FIELDS = [
+  "symbol",
+  "regularMarketPrice",
+  "regularMarketOpen",
+  "regularMarketPreviousClose",
+];
 
-    if (!result) return null;
-
-    return {
-      open: result.regularMarketOpen,
-      price: result.regularMarketPrice,
-      previousClose: result.regularMarketPreviousClose,
-    };
-
-  } catch (err) {
-    console.error(`Erro ao buscar ${ticker}:`, err.response?.data || err.message);
-    return null;
-  }
+function b3ToYahooSymbol(ticker) {
+  return `${String(ticker).trim().toUpperCase()}.SA`;
 }
 
-// 📩 Envia mensagem pro Telegram
+function yahooSymbolToB3(symbol) {
+  return String(symbol).replace(/\.SA$/i, "");
+}
+
+/**
+ * Abertura efetiva: Yahoo costuma enviar regularMarketOpen = 0 fora do pregão para FIIs BR.
+ */
+function resolveReferencePrice(quote) {
+  const open = quote.regularMarketOpen;
+  const prev = quote.regularMarketPreviousClose;
+  if (typeof open === "number" && open > 0) return open;
+  if (typeof prev === "number" && prev > 0) return prev;
+  return null;
+}
+
+function formatMoney(value) {
+  return `R$ ${Number(value).toFixed(2)}`;
+}
+
+function formatVariationLine(diff, variationPct) {
+  const emoji = variationPct >= 0 ? "🟢" : "🔴";
+  return `Variação: ${emoji} ${formatMoney(diff)} (${variationPct.toFixed(2)}%)\n\n`;
+}
+
+/**
+ * Uma única requisição para todos os ativos (menos latência que N chamadas HTTP).
+ */
+async function fetchFiiQuotes(tickers) {
+  const symbols = tickers.map(b3ToYahooSymbol);
+  const quotes = await yahooFinance.quote(symbols, { fields: QUOTE_FIELDS });
+  const list = Array.isArray(quotes) ? quotes : [quotes];
+  const byTicker = new Map();
+  for (const q of list) {
+    if (q && q.symbol) byTicker.set(yahooSymbolToB3(q.symbol), q);
+  }
+  return tickers.map((ticker) => ({
+    ticker,
+    quote: byTicker.get(ticker) ?? null,
+  }));
+}
+
+function buildTickerBlock(ticker, quote) {
+  const price = quote.regularMarketPrice;
+  if (typeof price !== "number" || !Number.isFinite(price)) {
+    return `${ticker}: ❌ sem cotação\n\n`;
+  }
+  const open = resolveReferencePrice(quote);
+  if (open == null || open <= 0) {
+    return `${ticker}: ❌ referência inválida\n\n`;
+  }
+  const diff = price - open;
+  const variationPct = (diff / open) * 100;
+  return (
+    `${ticker}\n` +
+    `Abertura: ${formatMoney(open)}\n` +
+    `Atual: ${formatMoney(price)}\n` +
+    formatVariationLine(diff, variationPct)
+  );
+}
+
 async function sendTelegram(message) {
   try {
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
@@ -43,62 +94,38 @@ async function sendTelegram(message) {
   }
 }
 
-// 📊 Gera relatório
 async function generateReport(type) {
   let msg = `📊 Relatório FIIs (${type})\n\n`;
-
   try {
-    // ⚡ Busca tudo em paralelo (mais rápido)
-    const results = await Promise.all(
-      FIIS.map(async (fii) => ({
-        fii,
-        data: await getPrice(fii)
-      }))
-    );
-
-    for (let { fii, data } of results) {
-      if (data && data.price != null) {
-        // 🧠 Se ainda não abriu, usa fechamento anterior
-        const open = data.open ?? data.previousClose;
-
-        const diff = data.price - open;
-        const variation = (diff / open) * 100;
-
-        const emoji = variation >= 0 ? "🟢" : "🔴";
-
-        msg += `${fii}\n`;
-        msg += `Abertura: R$ ${open.toFixed(2)}\n`;
-        msg += `Atual: R$ ${data.price.toFixed(2)}\n`;
-        msg += `Variação: ${emoji} R$ ${diff.toFixed(2)} (${variation.toFixed(2)}%)\n\n`;
-
+    const rows = await fetchFiiQuotes(FIIS);
+    for (const { ticker, quote } of rows) {
+      if (quote) {
+        msg += buildTickerBlock(ticker, quote);
       } else {
-        msg += `${fii}: ❌ erro\n\n`;
+        msg += `${ticker}: ❌ não encontrado\n\n`;
       }
     }
-
     await sendTelegram(msg);
-
   } catch (err) {
-    console.error("Erro ao gerar relatório:", err.message);
+    const detail = err.response?.data ?? err.message;
+    console.error("Erro ao gerar relatório:", detail);
   }
 }
 
-// ⏰ CRON JOBS (horário de Brasília)
+function scheduleReports() {
+  cron.schedule("0 9 * * 1-5", () => generateReport("Pré-abertura"));
+  cron.schedule("0 11 * * 1-5", () => generateReport("Pós-abertura"));
+  cron.schedule("0 21 * * 1-5", () => generateReport("Fechamento do dia"));
+}
 
-// 🟡 Pré-abertura
-cron.schedule("0 9 * * 1-5", async () => {
-  await generateReport("Pré-abertura");
-});
+function main() {
+  if (!TELEGRAM_TOKEN || !CHAT_ID) {
+    console.error("Defina TELEGRAM_TOKEN e CHAT_ID no ambiente.");
+    process.exitCode = 1;
+    return;
+  }
+  scheduleReports();
+  generateReport("Teste inicial");
+}
 
-// 🟢 Pós-abertura
-cron.schedule("0 11 * * 1-5", async () => {
-  await generateReport("Pós-abertura");
-});
-
-// 🌙 Fechamento do dia
-cron.schedule("0 21 * * 1-5", async () => {
-  await generateReport("Fechamento do dia");
-});
-
-// 🚀 Teste ao iniciar
-generateReport("Teste inicial");
+main();
