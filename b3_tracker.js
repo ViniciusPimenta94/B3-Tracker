@@ -144,4 +144,17 @@ function main() {
   generateReport("Teste inicial");
 }
 
+// Servidor Web simples para manter a Nuvem ativa
+const express = require("express");
+const app = express();
+const PORT = process.env.PORT || 8080;
+
+app.get("/", (req, res) => {
+  res.send("B3 Tracker rodando ativamente!");
+});
+
+app.listen(PORT, () => {
+  console.log(`Servidor de monitoramento ativo na porta ${PORT}`);
+});
+
 main();
