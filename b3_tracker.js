@@ -1,207 +1,228 @@
-require('dotenv').config();
+require("dotenv").config();
 
 process.env.TZ = "America/Sao_Paulo";
 
 const axios = require("axios");
 const cron = require("node-cron");
-const YahooFinance = require("yahoo-finance2").default;
+const express = require("express");
+
+const app = express();
+const PORT = process.env.PORT || 8080;
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
+const BRAPI_TOKEN = process.env.BRAPI_TOKEN;
 
-/** Tickers B3 (sem .SA). Fonte: Yahoo Finance (série .SA na B3). */
+/* =========================
+   CARTEIRA
+========================= */
+
 const FIIS = ["XPLG11", "PVBI11", "VISC11", "BTHF11"];
 const ETFS = ["IVVB11", "WRLD11"];
 const ACOES = ["BBSE3", "TAEE11", "ITUB4"];
 
 const GRUPOS = [
-  { label: "FIIs", tickers: FIIS },
-  { label: "ETFs", tickers: ETFS },
-  { label: "Ações", tickers: ACOES },
+  { nome: "🏢 FIIs", ativos: FIIS },
+  { nome: "🌎 ETFs", ativos: ETFS },
+  { nome: "🏦 Ações", ativos: ACOES },
 ];
 
-const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
-
-const QUOTE_FIELDS = [
-  "symbol",
-  "regularMarketPrice",
-  "regularMarketOpen",
-  "regularMarketPreviousClose",
-];
-
-function b3ToYahooSymbol(ticker) {
-  return `${String(ticker).trim().toUpperCase()}.SA`;
-}
-
-function yahooSymbolToB3(symbol) {
-  return String(symbol).replace(/\.SA$/i, "");
-}
-
-/**
- * Abertura efetiva: Yahoo costuma enviar regularMarketOpen = 0 fora do pregão para FIIs BR.
- */
-function resolveReferencePrice(quote) {
-  const open = quote.regularMarketOpen;
-  const prev = quote.regularMarketPreviousClose;
-  if (typeof open === "number" && open > 0) return open;
-  if (typeof prev === "number" && prev > 0) return prev;
-  return null;
-}
+/* =========================
+   HELPERS
+========================= */
 
 function formatMoney(value) {
-  return `R$ ${Number(value).toFixed(2)}`;
+  return `R$ ${Number(value).toFixed(2).replace(".", ",")}`;
 }
 
-function formatVariationLine(diff, variationPct) {
-  const emoji = variationPct >= 0 ? "🟢" : "🔴";
-  return `Variação: ${emoji} ${formatMoney(diff)} (${variationPct.toFixed(2)}%)\n\n`;
+function getVariationEmoji(value) {
+  if (value > 0) return "🟢";
+  if (value < 0) return "🔴";
+  return "⚪";
 }
 
-/**
- * Uma única requisição para todos os ativos (menos latência que N chamadas HTTP).
- */
-async function fetchQuotes(tickers) {
-  const symbols = tickers.map(b3ToYahooSymbol);
-  const quotes = await yahooFinance.quote(symbols, { fields: QUOTE_FIELDS });
-  const list = Array.isArray(quotes) ? quotes : [quotes];
-  const byTicker = new Map();
-  for (const q of list) {
-    if (q && q.symbol) byTicker.set(yahooSymbolToB3(q.symbol), q);
-  }
-  return tickers.map((ticker) => ({
-    ticker,
-    quote: byTicker.get(ticker) ?? null,
-  }));
+function getTrendEmoji(value) {
+  if (value >= 2) return "🚀";
+  if (value >= 1) return "📈";
+  if (value <= -2) return "💥";
+  if (value <= -1) return "📉";
+  return "➡️";
 }
 
-function buildTickerBlock(ticker, quote) {
-  const price = quote.regularMarketPrice;
-  if (typeof price !== "number" || !Number.isFinite(price)) {
-    return `${ticker}: ❌ sem cotação\n\n`;
-  }
-  const open = resolveReferencePrice(quote);
-  if (open == null || open <= 0) {
-    return `${ticker}: ❌ referência inválida\n\n`;
-  }
-  const diff = price - open;
-  const variationPct = (diff / open) * 100;
-  return (
-    `${ticker}\n` +
-    `Abertura: ${formatMoney(open)}\n` +
-    `Atual: ${formatMoney(price)}\n` +
-    formatVariationLine(diff, variationPct)
-  );
+function getMarketStatus() {
+  const now = new Date();
+  const hour = now.getHours();
+
+  if (hour < 10) return "🌅 Pré-mercado";
+  if (hour >= 10 && hour < 18) return "📈 Mercado Aberto";
+  return "🌙 Pós-mercado";
 }
+
+function getCurrentDate() {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "full",
+    timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date());
+}
+
+/* =========================
+   BRAPI
+========================= */
+
+async function getAssetData(ticker) {
+  try {
+    const url = `https://brapi.dev/api/quote/${ticker}?token=${BRAPI_TOKEN}`;
+
+    const response = await axios.get(url);
+
+    const result = response.data.results?.[0];
+
+    if (!result) return null;
+
+    const current = result.regularMarketPrice;
+    const open = result.regularMarketOpen || result.regularMarketPreviousClose;
+
+    const diff = current - open;
+    const variation = (diff / open) * 100;
+
+    return {
+      ticker,
+      current,
+      open,
+      diff,
+      variation,
+      high: result.regularMarketDayHigh,
+      low: result.regularMarketDayLow,
+      volume: result.regularMarketVolume,
+    };
+  } catch (err) {
+    console.error(`Erro ao buscar ${ticker}:`, err.response?.data || err.message);
+    return null;
+  }
+}
+
+/* =========================
+   TELEGRAM
+========================= */
 
 async function sendTelegram(message) {
   try {
-    await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-      chat_id: CHAT_ID,
-      text: message,
-    });
+    await axios.post(
+      `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,
+      {
+        chat_id: CHAT_ID,
+        text: message,
+        parse_mode: "Markdown",
+      }
+    );
+
+    console.log("✅ Relatório enviado!");
   } catch (err) {
-    console.error("Erro ao enviar mensagem:", err.response?.data || err.message);
+    console.error("Erro Telegram:", err.response?.data || err.message);
   }
 }
 
-async function generateReport(type) {
-  const todos = GRUPOS.flatMap((g) => g.tickers);
+/* =========================
+   RELATÓRIO
+========================= */
 
-  let msg = `📊 RELATÓRIO B3 • ${type.toUpperCase()}\n`;
-  msg += `🕒 ${new Date().toLocaleString("pt-BR")}\n\n`;
+async function generateReport(tipo) {
+  console.log(`📊 Gerando relatório: ${tipo}`);
 
-  try {
-    const rows = await fetchQuotes(todos);
-    const porTicker = new Map(rows.map((r) => [r.ticker, r.quote]));
+  let message = "";
 
-    for (const { label, tickers } of GRUPOS) {
+  message += `════════════════════\n`;
+  message += `📊 B3 TRACKER\n`;
+  message += `════════════════════\n\n`;
 
-      // Emoji por grupo
-      let emoji = "📦";
+  message += `🕒 ${getCurrentDate()}\n`;
+  message += `${getMarketStatus()}\n`;
+  message += `📌 *${tipo}*\n\n`;
 
-      if (label === "FIIs") emoji = "🏢";
-      if (label === "ETFs") emoji = "🌎";
-      if (label === "Ações") emoji = "📈";
+  for (const grupo of GRUPOS) {
+    message += `━━━━━━━━━━━━━━━\n`;
+    message += `${grupo.nome}\n`;
+    message += `━━━━━━━━━━━━━━━\n\n`;
 
-      msg += `${emoji} ${label}\n`;
-      msg += `━━━━━━━━━━━━━━\n`;
+    for (const ativo of grupo.ativos) {
+      const data = await getAssetData(ativo);
 
-      for (const ticker of tickers) {
-
-        const quote = porTicker.get(ticker);
-
-        if (!quote) {
-          msg += `${ticker} → ❌ erro\n\n`;
-          continue;
-        }
-
-        const price = quote.regularMarketPrice;
-        const open = resolveReferencePrice(quote);
-
-        if (!price || !open) {
-          msg += `${ticker} → ❌ sem dados\n\n`;
-          continue;
-        }
-
-        const diff = price - open;
-        const variationPct = (diff / open) * 100;
-
-        const emojiVar = variationPct >= 0 ? "🟢" : "🔴";
-        const signal = variationPct >= 0 ? "+" : "";
-
-        msg += `• ${ticker}\n`;
-        msg += `💰 ${formatMoney(price)}\n`;
-        msg += `${emojiVar} ${signal}${variationPct.toFixed(2)}% `;
-        msg += `(${signal}${diff.toFixed(2)})\n\n`;
+      if (!data) {
+        message += `❌ *${ativo}* → erro ao buscar cotação\n\n`;
+        continue;
       }
 
-      msg += `\n`;
+      const variationEmoji = getVariationEmoji(data.variation);
+      const trendEmoji = getTrendEmoji(data.variation);
+
+      message += `*${ativo}* ${trendEmoji}\n`;
+      message += `💰 Atual: ${formatMoney(data.current)}\n`;
+      message += `🚪 Abertura: ${formatMoney(data.open)}\n`;
+      message += `📊 Variação: ${variationEmoji} ${data.variation.toFixed(2)}%\n`;
+      message += `💵 Diferença: ${formatMoney(data.diff)}\n`;
+      message += `⬆️ Máx: ${formatMoney(data.high)}\n`;
+      message += `⬇️ Mín: ${formatMoney(data.low)}\n\n`;
     }
-
-    msg += `━━━━━━━━━━━━━━\n`;
-    msg += `🤖 B3 Tracker Online`;
-
-    await sendTelegram(msg);
-
-  } catch (err) {
-
-    const detail = err.response?.data ?? err.message;
-
-    console.error("Erro ao gerar relatório:", detail);
-
-    await sendTelegram(
-      `❌ Erro ao gerar relatório\n\n${String(detail).slice(0, 300)}`
-    );
   }
+
+  message += `━━━━━━━━━━━━━━━\n`;
+  message += `🤖 Bot ativo via Render\n`;
+  message += `📡 Dados: brapi.dev\n`;
+  message += `━━━━━━━━━━━━━━━`;
+
+  await sendTelegram(message);
 }
+
+/* =========================
+   AGENDAMENTOS
+========================= */
 
 function scheduleReports() {
-  cron.schedule("0 9 * * 1-5", () => generateReport("Pré-abertura"));
-  cron.schedule("0 11 * * 1-5", () => generateReport("Pós-abertura"));
-  cron.schedule("0 21 * * 1-5", () => generateReport("Fechamento do dia"));
+  // 09h -> pré-abertura
+  cron.schedule("0 9 * * 1-5", () => {
+    generateReport("Pré-abertura");
+  });
+
+  // 11h -> pós abertura
+  cron.schedule("0 11 * * 1-5", () => {
+    generateReport("Pós-abertura");
+  });
+
+  // 21h -> fechamento consolidado
+  cron.schedule("0 21 * * 1-5", () => {
+    generateReport("Fechamento do Dia");
+  });
+
+  console.log("⏰ Cron jobs agendados!");
 }
 
-function main() {
-  if (!TELEGRAM_TOKEN || !CHAT_ID) {
-    console.error("Defina TELEGRAM_TOKEN e CHAT_ID no ambiente.");
-    process.exitCode = 1;
-    return;
-  }
-  scheduleReports();
-  generateReport("Teste inicial");
-}
-
-// Servidor Web simples para manter a Nuvem ativa
-const express = require("express");
-const app = express();
-const PORT = process.env.PORT || 8080;
+/* =========================
+   EXPRESS SERVER
+========================= */
 
 app.get("/", (req, res) => {
-  res.send("B3 Tracker rodando ativamente!");
+  res.send("✅ B3 Tracker Online");
 });
 
 app.listen(PORT, () => {
-  console.log(`Servidor de monitoramento ativo na porta ${PORT}`);
+  console.log(`🌐 Servidor online na porta ${PORT}`);
 });
+
+/* =========================
+   START
+========================= */
+
+function main() {
+  if (!TELEGRAM_TOKEN || !CHAT_ID || !BRAPI_TOKEN) {
+    console.error("❌ Variáveis de ambiente faltando.");
+    return;
+  }
+
+  scheduleReports();
+
+  // Teste ao iniciar
+  generateReport("Teste Inicial");
+}
 
 main();
