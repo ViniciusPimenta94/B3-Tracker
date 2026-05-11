@@ -106,25 +106,72 @@ async function sendTelegram(message) {
 
 async function generateReport(type) {
   const todos = GRUPOS.flatMap((g) => g.tickers);
-  let msg = `📊 Relatório B3 (${type})\n\n`;
+
+  let msg = `📊 RELATÓRIO B3 • ${type.toUpperCase()}\n`;
+  msg += `🕒 ${new Date().toLocaleString("pt-BR")}\n\n`;
+
   try {
     const rows = await fetchQuotes(todos);
     const porTicker = new Map(rows.map((r) => [r.ticker, r.quote]));
+
     for (const { label, tickers } of GRUPOS) {
-      msg += `— ${label} —\n\n`;
+
+      // Emoji por grupo
+      let emoji = "📦";
+
+      if (label === "FIIs") emoji = "🏢";
+      if (label === "ETFs") emoji = "🌎";
+      if (label === "Ações") emoji = "📈";
+
+      msg += `${emoji} ${label}\n`;
+      msg += `━━━━━━━━━━━━━━\n`;
+
       for (const ticker of tickers) {
+
         const quote = porTicker.get(ticker);
-        if (quote) {
-          msg += buildTickerBlock(ticker, quote);
-        } else {
-          msg += `${ticker}: ❌ não encontrado\n\n`;
+
+        if (!quote) {
+          msg += `${ticker} → ❌ erro\n\n`;
+          continue;
         }
+
+        const price = quote.regularMarketPrice;
+        const open = resolveReferencePrice(quote);
+
+        if (!price || !open) {
+          msg += `${ticker} → ❌ sem dados\n\n`;
+          continue;
+        }
+
+        const diff = price - open;
+        const variationPct = (diff / open) * 100;
+
+        const emojiVar = variationPct >= 0 ? "🟢" : "🔴";
+        const signal = variationPct >= 0 ? "+" : "";
+
+        msg += `• ${ticker}\n`;
+        msg += `💰 ${formatMoney(price)}\n`;
+        msg += `${emojiVar} ${signal}${variationPct.toFixed(2)}% `;
+        msg += `(${signal}${diff.toFixed(2)})\n\n`;
       }
+
+      msg += `\n`;
     }
+
+    msg += `━━━━━━━━━━━━━━\n`;
+    msg += `🤖 B3 Tracker Online`;
+
     await sendTelegram(msg);
+
   } catch (err) {
+
     const detail = err.response?.data ?? err.message;
+
     console.error("Erro ao gerar relatório:", detail);
+
+    await sendTelegram(
+      `❌ Erro ao gerar relatório\n\n${String(detail).slice(0, 300)}`
+    );
   }
 }
 
