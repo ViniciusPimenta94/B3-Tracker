@@ -1,13 +1,14 @@
 {
-  "name": "fii-tracker",
+  "name": "b3-tracker",
   "version": "1.0.0",
-  "main": "fii_tracker.js",
+  "main": "b3_tracker.js",
   "scripts": {
-    "start": "node fii_tracker.js"
+    "start": "node b3_tracker.js"
   },
   "dependencies": {
     "axios": "^1.15.0",
     "cheerio": "^1.2.0",
+    "dotenv": "^17.4.2",
     "node-cron": "^4.2.1",
     "yahoo-finance2": "^3.14.0"
   }
