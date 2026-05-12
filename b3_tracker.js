@@ -180,19 +180,40 @@ async function generateReport(tipo) {
 
 function scheduleReports() {
   // 09h -> pré-abertura
-  cron.schedule("0 9 * * 1-5", () => {
-    generateReport("Pré-abertura");
-  });
+  cron.schedule(
+    "0 9 * * 1-5",
+    () => {
+      console.log("⏰ Executando Pré-abertura");
+      generateReport("Pré-abertura");
+    },
+    {
+      timezone: "America/Sao_Paulo",
+    }
+  );
 
   // 11h -> pós abertura
-  cron.schedule("0 11 * * 1-5", () => {
-    generateReport("Pós-abertura");
-  });
+  cron.schedule(
+    "0 11 * * 1-5",
+    () => {
+      console.log("⏰ Executando Pós-abertura");
+      generateReport("Pós-abertura");
+    },
+    {
+      timezone: "America/Sao_Paulo",
+    }
+  );
 
   // 21h -> fechamento consolidado
-  cron.schedule("0 21 * * 1-5", () => {
-    generateReport("Fechamento do Dia");
-  });
+  cron.schedule(
+    "0 21 * * 1-5",
+    () => {
+      console.log("⏰ Executando Fechamento");
+      generateReport("Fechamento do Dia");
+    },
+    {
+      timezone: "America/Sao_Paulo",
+    }
+  );
 
   console.log("⏰ Cron jobs agendados!");
 }
@@ -224,5 +245,22 @@ function main() {
   // Teste ao iniciar
   generateReport("Teste Inicial");
 }
+
+/* =========================
+   HEARTBEAT
+========================= */
+
+setInterval(() => {
+  console.log(
+    "🤖 Bot online:",
+    new Date().toLocaleString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+    })
+  );
+}, 1000 * 60 * 30);
+
+/* =========================
+   START
+========================= */
 
 main();
