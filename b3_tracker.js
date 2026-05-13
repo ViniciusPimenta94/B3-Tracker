@@ -133,7 +133,6 @@ async function generateReport(tipo) {
   let message = "";
 
   message += `📊 B3 TRACKER\n`;
-  message += `═══════════════════\n\n`;
 
   message += `🕒 ${getCurrentDate()}\n`;
   message += `${getMarketStatus()}\n`;
