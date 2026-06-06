@@ -17,9 +17,9 @@ const BRAPI_TOKEN = process.env.BRAPI_TOKEN;
    CARTEIRA
 ========================= */
 
-const FIIS = ["XPLG11", "PVBI11", "VISC11", "BTHF11"];
+const FIIS = ["XPLG11", "PVBI11", "VISC11", "BTHF11", "CPTS11"];
 const ETFS = ["IVVB11", "WRLD11"];
-const ACOES = ["BBSE3", "TAEE11", "ITUB4"];
+const ACOES = ["BBSE3", "TAEE11", "ITUB4", "WEGE3"];
 
 const GRUPOS = [
   { nome: "🏢 FIIs", ativos: FIIS },
