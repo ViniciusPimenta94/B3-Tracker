@@ -240,8 +240,7 @@ function main() {
 
   scheduleReports();
 
-  // Teste ao iniciar
-  generateReport("Teste Inicial");
+  console.log("✅ Bot iniciado; aguardando os horários agendados.");
 }
 
 /* =========================

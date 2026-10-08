@@ -1,0 +1,33 @@
+name: Wake B3 Tracker
+
+on:
+  schedule:
+    # Acorda o serviço 10 minutos antes dos relatórios (horário de São Paulo).
+    - cron: "50 8 * * 1-5"
+      timezone: "America/Sao_Paulo"
+    - cron: "50 10 * * 1-5"
+      timezone: "America/Sao_Paulo"
+    - cron: "50 20 * * 1-5"
+      timezone: "America/Sao_Paulo"
+  workflow_dispatch:
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate service URL
+        env:
+          RENDER_TRACKER_URL: ${{ secrets.RENDER_TRACKER_URL }}
+        run: |
+          if [ -z "$RENDER_TRACKER_URL" ]; then
+            echo "Configure o secret RENDER_TRACKER_URL com a URL do B3 Tracker no Render."
+            exit 1
+          fi
+
+      - name: Wake Render service
+        env:
+          RENDER_TRACKER_URL: ${{ secrets.RENDER_TRACKER_URL }}
+        run: >-
+          curl --fail --silent --show-error
+          --retry 5 --retry-delay 15 --retry-all-errors
+          --max-time 120 "$RENDER_TRACKER_URL"
