@@ -2,13 +2,11 @@ name: Wake B3 Tracker
 
 on:
   schedule:
-    # Acorda o serviço 10 minutos antes dos relatórios (horário de São Paulo).
-    - cron: "50 8 * * 1-5"
-      timezone: "America/Sao_Paulo"
-    - cron: "50 10 * * 1-5"
-      timezone: "America/Sao_Paulo"
-    - cron: "50 20 * * 1-5"
-      timezone: "America/Sao_Paulo"
+    # Horários UTC (BRT = UTC-3). Dois pings mantêm o Render acordado
+    # durante cada janela do relatório e evitam disparos na virada da hora.
+    - cron: "45,55 11 * * 1-5" # 08:45 e 08:55 BRT; relatório às 09:00
+    - cron: "45,55 13 * * 1-5" # 10:45 e 10:55 BRT; relatório às 11:00
+    - cron: "45,55 23 * * 1-5" # 20:45 e 20:55 BRT; relatório às 21:00
   workflow_dispatch:
 
 jobs:
