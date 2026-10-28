@@ -30,6 +30,7 @@ const ACOES = [
   "CMIG4",
   "RADL3",
   "CYRE3",
+  "BBDC3",
 ];
 
 const GRUPOS = [
