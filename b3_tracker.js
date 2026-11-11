@@ -17,20 +17,26 @@ const BRAPI_TOKEN = process.env.BRAPI_TOKEN;
    CARTEIRA
 ========================= */
 
-const FIIS = ["XPLG11", "PVBI11", "VISC11", "BTHF11", "CPTS11"];
-const ETFS = ["IVVB11", "WRLD11"];
+const FIIS = ["PVBI11", "XPLG11", "VISC11", "BTHF11", "CPTS11"];
+
+const ETFS = ["WRLD11", "IVVB11"];
+
 const ACOES = [
-  "BBSE3",
-  "TAEE11",
-  "ITUB4",
-  "WEGE3",
-  "TOTS3",
-  "TIMS3",
-  "SBSP3",
-  "CMIG4",
-  "RADL3",
-  "CYRE3",
-  "BBDC3",
+  // BESST
+  "ITUB4",  // Bancos
+  "BBDC3",  // Bancos
+  "TAEE11", // Energia elétrica
+  "CMIG4",  // Energia elétrica
+  "BBSE3",  // Seguros
+  "SBSP3",  // Saneamento
+  "TIMS3",  // Telecomunicações
+
+  // Demais setores
+  "TOTS3",  // Tecnologia
+  "WEGE3",  // Bens industriais
+  "PETR4",  // Petróleo e gás
+  "CYRE3",  // Construção civil
+  "RADL3"   // Saúde / Varejo farmacêutico
 ];
 
 const GRUPOS = [
