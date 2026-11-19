@@ -25,9 +25,11 @@ const ACOES = [
   // BESST
   "ITUB4",  // Bancos
   "BBDC3",  // Bancos
+  "BBDC4",  // Bancos
   "TAEE11", // Energia elétrica
   "CMIG4",  // Energia elétrica
   "BBSE3",  // Seguros
+  "PSSA3",  // Seguros
   "SBSP3",  // Saneamento
   "TIMS3",  // Telecomunicações
 
