@@ -17,7 +17,7 @@ const BRAPI_TOKEN = process.env.BRAPI_TOKEN;
    CARTEIRA
 ========================= */
 
-const FIIS = ["PVBI11", "XPLG11", "VISC11", "BTHF11", "CPTS11"];
+const FIIS = ["PVBI11", "XPLG11", "VISC11", "BTHF11", "CPTS11", "ALZR11"];
 
 const ETFS = ["WRLD11", "IVVB11"];
 
@@ -36,7 +36,8 @@ const ACOES = [
   "WEGE3",  // Bens industriais
   "PETR4",  // Petróleo e gás
   "CYRE3",  // Construção civil
-  "RADL3"   // Saúde / Varejo farmacêutico
+  "RADL3",  // Saúde / Varejo farmacêutico
+  "KLBN11"  // Papel e celulose
 ];
 
 const GRUPOS = [
